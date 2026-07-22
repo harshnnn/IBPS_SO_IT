@@ -42,7 +42,7 @@ export interface Question {
   option_d: string;
   correct_option: Option;
   explanation: string | null;
-  source: "manual" | "ai";
+  source: "manual" | "ai" | "chatgpt" | "youtube";
   difficulty: "easy" | "medium" | "hard";
   created_by: string;
 }

@@ -3,7 +3,7 @@ import { useAuth } from "../lib/auth";
 import { supabase, type Chapter, type Subtopic, type Question, type Option } from "../lib/supabase";
 import { Card, Button, Badge, Spinner, EmptyState } from "../components/ui";
 import { BottomNav } from "./Dashboard";
-import { Plus, Sparkles, Trash2, FileText, ArrowLeft } from "lucide-react";
+import { Plus, Sparkles, Trash2, FileText, Link2, Youtube, MessageSquare, CheckCircle, AlertCircle } from "lucide-react";
 
 interface ManageProps {
   onNavigate: (screen: string, params?: Record<string, string>) => void;
@@ -15,7 +15,7 @@ export default function Manage({ onNavigate }: ManageProps) {
   const [subtopics, setSubtopics] = useState<Subtopic[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"add" | "list">("add");
+  const [tab, setTab] = useState<"add" | "import" | "list">("add");
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedSubtopic, setSelectedSubtopic] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -34,6 +34,12 @@ export default function Manage({ onNavigate }: ManageProps) {
   // AI generation
   const [aiCount, setAiCount] = useState(5);
   const [aiDifficulty, setAiDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+
+  // Import from URL
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ count: number; sourceType: string; distribution: Record<string, number> } | null>(null);
+  const [importError, setImportError] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -135,6 +141,45 @@ export default function Manage({ onNavigate }: ManageProps) {
     setGenerating(false);
   };
 
+  const importFromUrl = async () => {
+    if (!user || !selectedChapter || !importUrl) {
+      setImportError("Please select a chapter and enter a URL.");
+      return;
+    }
+    setImporting(true);
+    setImportError("");
+    setImportResult(null);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/import-questions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          },
+          body: JSON.stringify({
+            url: importUrl,
+            chapterId: selectedChapter,
+            subtopicId: selectedSubtopic || null,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Import failed");
+      }
+      setImportResult({
+        count: data.count,
+        sourceType: data.sourceType,
+        distribution: data.distribution,
+      });
+    } catch (err: any) {
+      setImportError(err.message);
+    }
+    setImporting(false);
+  };
+
   const deleteQuestion = async (id: string) => {
     if (!confirm("Delete this question?")) return;
     await supabase.from("questions").delete().eq("id", id);
@@ -166,7 +211,15 @@ export default function Manage({ onNavigate }: ManageProps) {
               tab === "add" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
             }`}
           >
-            Add Questions
+            Add
+          </button>
+          <button
+            onClick={() => setTab("import")}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+              tab === "import" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+            }`}
+          >
+            Import
           </button>
           <button
             onClick={() => setTab("list")}
@@ -184,7 +237,7 @@ export default function Manage({ onNavigate }: ManageProps) {
             <label className="block text-sm font-medium text-slate-700 mb-1.5">Chapter</label>
             <select
               value={selectedChapter}
-              onChange={(e) => { setSelectedChapter(e.target.value); setSelectedSubtopic(""); }}
+              onChange={(e) => { setSelectedChapter(e.target.value); setSelectedSubtopic(""); setImportResult(null); }}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none bg-white"
             >
               <option value="">Select chapter...</option>
@@ -201,7 +254,7 @@ export default function Manage({ onNavigate }: ManageProps) {
                 onChange={(e) => setSelectedSubtopic(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none bg-white"
               >
-                <option value="">All subtopics</option>
+                <option value="">All subtopics (auto-detect)</option>
                 {filteredSubtopics.map((s) => (
                   <option key={s.id} value={s.id}>{s.priority}. {s.name}</option>
                 ))}
@@ -348,6 +401,117 @@ export default function Manage({ onNavigate }: ManageProps) {
               </div>
             </Card>
           </>
+        ) : tab === "import" ? (
+          <>
+            {/* Import from URL */}
+            <Card className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Link2 className="w-5 h-5 text-blue-600" />
+                <h2 className="font-semibold text-slate-900">Import Questions from URL</h2>
+              </div>
+              <p className="text-sm text-slate-500 mb-4">
+                Paste a shared ChatGPT conversation link or a YouTube video/playlist link. The AI will extract all multiple-choice questions and automatically sort them into the correct subtopics within the selected chapter.
+              </p>
+
+              {/* Source type badges */}
+              <div className="flex gap-2 mb-4">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg">
+                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs font-medium text-slate-600">ChatGPT Shares</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg">
+                  <Youtube className="w-4 h-4 text-red-600" />
+                  <span className="text-xs font-medium text-slate-600">YouTube</span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">URL *</label>
+                  <input
+                    type="url"
+                    value={importUrl}
+                    onChange={(e) => {
+                      setImportUrl(e.target.value);
+                      setImportResult(null);
+                      setImportError("");
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                    placeholder="https://chatgpt.com/share/... or https://youtube.com/watch?v=..."
+                  />
+                </div>
+
+                {importError && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 rounded-xl">
+                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-red-700">{importError}</p>
+                  </div>
+                )}
+
+                {importResult && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl">
+                      <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-emerald-800">
+                          {importResult.count} questions imported from {importResult.sourceType === "youtube" ? "YouTube" : "ChatGPT"}!
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Subtopic distribution */}
+                    <div className="p-4 bg-slate-50 rounded-xl">
+                      <p className="text-xs font-medium text-slate-600 mb-2">Distributed across subtopics:</p>
+                      <div className="space-y-1.5">
+                        {Object.entries(importResult.distribution).map(([subName, count]) => (
+                          <div key={subName} className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700">{subName}</span>
+                            <Badge color="blue">{count} {count === 1 ? "question" : "questions"}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={() => { setImportUrl(""); setImportResult(null); }} className="flex-1">
+                        Import Another
+                      </Button>
+                      <Button onClick={() => onNavigate("quiz-setup", { preselectChapter: selectedChapter })} className="flex-1">
+                        Practice Now
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!importResult && (
+                  <Button onClick={importFromUrl} disabled={!selectedChapter || !importUrl || importing} className="w-full">
+                    {importing ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Spinner size={16} /> Fetching & extracting questions...
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        <Link2 className="w-4 h-4" /> Import Questions
+                      </span>
+                    )}
+                  </Button>
+                )}
+
+                {!selectedChapter && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" /> Select a chapter above first.
+                  </p>
+                )}
+
+                {/* Info note */}
+                <div className="p-3 bg-blue-50 rounded-xl">
+                  <p className="text-xs text-blue-700 leading-relaxed">
+                    <strong>How it works:</strong> The app fetches the page content, sends it to an AI model that identifies all MCQ-style questions, determines the correct answers, and assigns each question to the most relevant subtopic within the selected chapter. Imported questions are added to your shared question bank and appear in practice quizzes immediately.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </>
         ) : (
           /* List of my questions */
           <Card className="p-5">
@@ -367,7 +531,7 @@ export default function Manage({ onNavigate }: ManageProps) {
                     </div>
                     <div className="flex gap-2">
                       <Badge color="slate">{q.difficulty}</Badge>
-                      <Badge color={q.source === "ai" ? "purple" : "blue"}>{q.source}</Badge>
+                      <Badge color={q.source === "ai" ? "purple" : q.source === "chatgpt" ? "green" : q.source === "youtube" ? "red" : "blue"}>{q.source}</Badge>
                       <Badge color="green">Ans: {q.correct_option.toUpperCase()}</Badge>
                     </div>
                   </div>
@@ -377,7 +541,7 @@ export default function Manage({ onNavigate }: ManageProps) {
               <EmptyState
                 icon={<FileText className="w-12 h-12" />}
                 title="No questions yet"
-                description="Add questions manually or generate them with AI using the Add tab."
+                description="Add questions manually, generate them with AI, or import from a URL using the other tabs."
               />
             )}
           </Card>
