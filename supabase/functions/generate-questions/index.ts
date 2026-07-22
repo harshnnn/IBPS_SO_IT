@@ -65,19 +65,19 @@ Deno.serve(async (req: Request) => {
     let usedFallback = false;
     let aiSource = "fallback";
 
-    // Try Gemini first (generous free tier), then OpenAI, then static fallback bank
-    if (geminiKey) {
+    // Try OpenAI first (best quality), then Gemini, then static fallback bank
+    if (openaiKey) {
       try {
-        questions = await generateWithGemini(geminiKey, chapterName, subtopicName, count, difficulty);
-        aiSource = "gemini";
-      } catch (geminiErr) {
-        console.warn("Gemini generation failed:", geminiErr.message);
-        if (openaiKey) {
+        questions = await generateWithOpenAI(openaiKey, chapterName, subtopicName, count, difficulty);
+        aiSource = "openai";
+      } catch (openaiErr) {
+        console.warn("OpenAI generation failed:", openaiErr.message);
+        if (geminiKey) {
           try {
-            questions = await generateWithOpenAI(openaiKey, chapterName, subtopicName, count, difficulty);
-            aiSource = "openai";
-          } catch (openaiErr) {
-            console.warn("OpenAI generation failed, using fallback:", openaiErr.message);
+            questions = await generateWithGemini(geminiKey, chapterName, subtopicName, count, difficulty);
+            aiSource = "gemini";
+          } catch (geminiErr) {
+            console.warn("Gemini generation failed, using fallback:", geminiErr.message);
             questions = generateFallback(chapterName, subtopicName, count, difficulty);
             usedFallback = true;
           }
@@ -86,12 +86,12 @@ Deno.serve(async (req: Request) => {
           usedFallback = true;
         }
       }
-    } else if (openaiKey) {
+    } else if (geminiKey) {
       try {
-        questions = await generateWithOpenAI(openaiKey, chapterName, subtopicName, count, difficulty);
-        aiSource = "openai";
+        questions = await generateWithGemini(geminiKey, chapterName, subtopicName, count, difficulty);
+        aiSource = "gemini";
       } catch (aiErr) {
-        console.warn("OpenAI generation failed, using fallback:", aiErr.message);
+        console.warn("Gemini generation failed, using fallback:", aiErr.message);
         questions = generateFallback(chapterName, subtopicName, count, difficulty);
         usedFallback = true;
       }
