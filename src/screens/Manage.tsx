@@ -454,7 +454,7 @@ export default function Manage({ onNavigate }: ManageProps) {
                       <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                       <div>
                         <p className="text-sm font-medium text-emerald-800">
-                          {importResult.count} questions imported from {importResult.sourceType === "youtube" ? "YouTube" : "ChatGPT"}!
+                          {importResult.count} questions imported from {importResult.sourceType === "youtube" ? "YouTube" : importResult.sourceType === "chatgpt" ? "ChatGPT" : "the web"}!
                         </p>
                       </div>
                     </div>
@@ -506,7 +506,7 @@ export default function Manage({ onNavigate }: ManageProps) {
                 {/* Info note */}
                 <div className="p-3 bg-blue-50 rounded-xl">
                   <p className="text-xs text-blue-700 leading-relaxed">
-                    <strong>How it works:</strong> The app fetches the page content, sends it to an AI model that identifies all MCQ-style questions, determines the correct answers, and assigns each question to the most relevant subtopic within the selected chapter. Imported questions are added to your shared question bank and appear in practice quizzes immediately.
+                    <strong>How it works:</strong> The app fetches the page content, sends it to Google Gemini AI that identifies all MCQ-style questions, determines the correct answers, and assigns each question to the most relevant subtopic within the selected chapter. Imported questions are added to your shared question bank and appear in practice quizzes immediately. For full tests spanning multiple subjects, select the "Miscellaneous" chapter.
                   </p>
                 </div>
               </div>

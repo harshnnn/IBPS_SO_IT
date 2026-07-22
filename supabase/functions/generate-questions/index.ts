@@ -58,20 +58,38 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
 
     let questions: QuestionPayload[] = [];
     let usedFallback = false;
+    let aiSource = "fallback";
 
-    if (openaiKey) {
+    // Try Gemini first (generous free tier), then OpenAI, then static fallback bank
+    if (geminiKey) {
       try {
-        questions = await generateWithOpenAI(
-          openaiKey,
-          chapterName,
-          subtopicName,
-          count,
-          difficulty,
-        );
+        questions = await generateWithGemini(geminiKey, chapterName, subtopicName, count, difficulty);
+        aiSource = "gemini";
+      } catch (geminiErr) {
+        console.warn("Gemini generation failed:", geminiErr.message);
+        if (openaiKey) {
+          try {
+            questions = await generateWithOpenAI(openaiKey, chapterName, subtopicName, count, difficulty);
+            aiSource = "openai";
+          } catch (openaiErr) {
+            console.warn("OpenAI generation failed, using fallback:", openaiErr.message);
+            questions = generateFallback(chapterName, subtopicName, count, difficulty);
+            usedFallback = true;
+          }
+        } else {
+          questions = generateFallback(chapterName, subtopicName, count, difficulty);
+          usedFallback = true;
+        }
+      }
+    } else if (openaiKey) {
+      try {
+        questions = await generateWithOpenAI(openaiKey, chapterName, subtopicName, count, difficulty);
+        aiSource = "openai";
       } catch (aiErr) {
         console.warn("OpenAI generation failed, using fallback:", aiErr.message);
         questions = generateFallback(chapterName, subtopicName, count, difficulty);
@@ -143,7 +161,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({ questions, source: usedFallback ? "fallback" : "openai" }),
+      JSON.stringify({ questions, source: usedFallback ? "fallback" : aiSource }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
@@ -154,18 +172,14 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function generateWithOpenAI(
-  apiKey: string,
+function buildGenPrompt(
   chapterName: string,
   subtopicName: string | undefined,
   count: number,
   difficulty: string,
-): Promise<QuestionPayload[]> {
-  const scope = subtopicName
-    ? `${chapterName} — ${subtopicName}`
-    : chapterName;
-
-  const prompt = `You are an expert examiner for the IBPS SO IT (Specialist Officer - IT) exam.
+): string {
+  const scope = subtopicName ? `${chapterName} — ${subtopicName}` : chapterName;
+  return `You are an expert examiner for the IBPS SO IT (Specialist Officer - IT) exam.
 Generate ${count} multiple-choice questions for the topic: "${scope}".
 Difficulty: ${difficulty}.
 
@@ -175,6 +189,58 @@ Requirements:
 - Provide the correct answer and a concise explanation.
 - Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {"questions":[{"question_text":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_option":"a","explanation":"...","difficulty":"medium"}]}`;
+}
+
+async function generateWithGemini(
+  apiKey: string,
+  chapterName: string,
+  subtopicName: string | undefined,
+  count: number,
+  difficulty: string,
+): Promise<QuestionPayload[]> {
+  const prompt = buildGenPrompt(chapterName, subtopicName, count, difficulty);
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: "application/json",
+        },
+      }),
+      signal: AbortSignal.timeout(30000),
+    },
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API error: ${res.status} ${errText}`);
+  }
+
+  const data = await res.json();
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!content) throw new Error("Empty response from Gemini");
+
+  const parsed = JSON.parse(content);
+  const qs: QuestionPayload[] = parsed.questions || parsed;
+  if (!Array.isArray(qs) || qs.length === 0) {
+    throw new Error("No questions in AI response");
+  }
+  return qs.slice(0, count);
+}
+
+async function generateWithOpenAI(
+  apiKey: string,
+  chapterName: string,
+  subtopicName: string | undefined,
+  count: number,
+  difficulty: string,
+): Promise<QuestionPayload[]> {
+  const prompt = buildGenPrompt(chapterName, subtopicName, count, difficulty);
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
