@@ -68,10 +68,15 @@ export default function Progress({ onNavigate }: ProgressProps) {
 
         {/* Overall stats */}
         <div className="grid grid-cols-3 gap-3">
-          <Card className="p-4 text-center">
-            <p className="text-2xl font-bold text-slate-900">{stats?.totalAttempted ?? 0}</p>
-            <p className="text-xs text-slate-500 mt-0.5">Attempted</p>
-          </Card>
+          <button
+            onClick={() => onNavigate("attempted-questions")}
+            className="text-center focus:outline-none"
+          >
+            <Card className="p-4 hover:shadow-md transition-shadow cursor-pointer h-full">
+              <p className="text-2xl font-bold text-slate-900">{stats?.totalAttempted ?? 0}</p>
+              <p className="text-xs text-slate-500 mt-0.5">Attempted</p>
+            </Card>
+          </button>
           <Card className="p-4 text-center">
             <p className="text-2xl font-bold text-emerald-600">{stats?.totalCorrect ?? 0}</p>
             <p className="text-xs text-slate-500 mt-0.5">Correct</p>
@@ -133,28 +138,37 @@ export default function Progress({ onNavigate }: ProgressProps) {
           <h2 className="font-semibold text-slate-900 mb-3">Chapter Breakdown</h2>
           <div className="space-y-3">
             {stats?.chapterStats.map((c) => (
-              <button
-                key={c.chapter.id}
-                onClick={() => onNavigate("chapter-detail", { chapterId: c.chapter.id })}
-                className="block w-full text-left"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs text-slate-400 font-bold">#{c.chapter.priority}</span>
-                    <span className="text-sm font-medium text-slate-800 truncate">{c.chapter.name}</span>
+              <div key={c.chapter.id}>
+                <button
+                  onClick={() => onNavigate("chapter-detail", { chapterId: c.chapter.id })}
+                  className="block w-full text-left"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs text-slate-400 font-bold">#{c.chapter.priority}</span>
+                      <span className="text-sm font-medium text-slate-800 truncate">{c.chapter.name}</span>
+                    </div>
+                    {c.totalAttempted > 0 ? (
+                      <span className="text-xs text-slate-500 flex-shrink-0">
+                        {c.correctCount}/{c.totalAttempted} · {c.accuracy.toFixed(0)}%
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400">Not started</span>
+                    )}
                   </div>
-                  {c.totalAttempted > 0 ? (
-                    <span className="text-xs text-slate-500 flex-shrink-0">
-                      {c.correctCount}/{c.totalAttempted} · {c.accuracy.toFixed(0)}%
-                    </span>
-                  ) : (
-                    <span className="text-xs text-slate-400">Not started</span>
+                  {c.totalAttempted > 0 && (
+                    <ProgressBar value={c.accuracy} color={c.accuracy >= 70 ? "green" : c.accuracy >= 50 ? "amber" : "red"} />
                   )}
-                </div>
+                </button>
                 {c.totalAttempted > 0 && (
-                  <ProgressBar value={c.accuracy} color={c.accuracy >= 70 ? "green" : c.accuracy >= 50 ? "amber" : "red"} />
+                  <button
+                    onClick={() => onNavigate("attempted-questions", { chapterId: c.chapter.id })}
+                    className="text-xs text-blue-600 font-medium hover:text-blue-700 mt-1.5"
+                  >
+                    View {c.totalAttempted} attempted questions →
+                  </button>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </Card>

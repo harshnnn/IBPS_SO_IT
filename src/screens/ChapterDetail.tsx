@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
 import { fetchChapterStats, type ChapterStat } from "../lib/analytics";
 import { Card, Button, Badge, ProgressBar, Spinner, EmptyState } from "../components/ui";
-import { ArrowLeft, Target, TrendingUp, TrendingDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Target, TrendingUp, TrendingDown, ChevronRight, FileQuestion } from "lucide-react";
 
 interface ChapterDetailProps {
   onNavigate: (screen: string, params?: Record<string, string>) => void;
@@ -75,14 +75,24 @@ export default function ChapterDetail({ onNavigate, params }: ChapterDetailProps
           )}
         </Card>
 
-        {/* Action */}
-        <Button
-          onClick={() => onNavigate("quiz-setup", { preselectChapter: stat.chapter.id })}
-          className="w-full"
-          size="lg"
-        >
-          <span className="flex items-center justify-center gap-2"><Target className="w-4 h-4" /> Practice This Chapter</span>
-        </Button>
+        {/* Actions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Button
+            onClick={() => onNavigate("quiz-setup", { preselectChapter: stat.chapter.id })}
+            size="lg"
+          >
+            <span className="flex items-center justify-center gap-2"><Target className="w-4 h-4" /> Practice This Chapter</span>
+          </Button>
+          {stat.totalAttempted > 0 && (
+            <Button
+              variant="secondary"
+              onClick={() => onNavigate("attempted-questions", { chapterId: stat.chapter.id })}
+              size="lg"
+            >
+              <span className="flex items-center justify-center gap-2"><FileQuestion className="w-4 h-4" /> View Attempted ({stat.totalAttempted})</span>
+            </Button>
+          )}
+        </div>
 
         {stat.totalAttempted === 0 ? (
           <EmptyState
@@ -137,10 +147,13 @@ export default function ChapterDetail({ onNavigate, params }: ChapterDetailProps
                 {stat.subtopics.map((s) => (
                   <div key={s.subtopic.id}>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2 min-w-0">
+                      <button
+                        onClick={() => s.totalAttempted > 0 && onNavigate("attempted-questions", { chapterId: stat.chapter.id, subtopicId: s.subtopic.id })}
+                        className={`flex items-center gap-2 min-w-0 text-left ${s.totalAttempted > 0 ? "cursor-pointer" : "cursor-default"}`}
+                      >
                         <span className="text-xs text-slate-400">#{s.subtopic.priority}</span>
-                        <span className="text-sm text-slate-700 truncate">{s.subtopic.name}</span>
-                      </div>
+                        <span className={`text-sm truncate ${s.totalAttempted > 0 ? "text-slate-700 hover:text-blue-600" : "text-slate-700"}`}>{s.subtopic.name}</span>
+                      </button>
                       {s.totalAttempted > 0 ? (
                         <span className="text-xs text-slate-500 flex-shrink-0">
                           {s.correctCount}/{s.totalAttempted} · {s.accuracy.toFixed(0)}%

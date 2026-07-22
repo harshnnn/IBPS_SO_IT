@@ -8,6 +8,7 @@ import QuizResult from "./screens/QuizResult";
 import Progress from "./screens/Progress";
 import ChapterDetail from "./screens/ChapterDetail";
 import Mistakes from "./screens/Mistakes";
+import AttemptedQuestions from "./screens/AttemptedQuestions";
 import Manage from "./screens/Manage";
 import { Spinner } from "./components/ui";
 
@@ -43,6 +44,8 @@ function AppContent() {
       return <Progress onNavigate={navigate} />;
     case "mistakes":
       return <Mistakes onNavigate={navigate} />;
+    case "attempted-questions":
+      return <AttemptedQuestions onNavigate={navigate} params={params} />;
     case "chapter-detail":
       return <ChapterDetail onNavigate={navigate} params={params} />;
     case "manage":

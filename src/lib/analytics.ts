@@ -153,6 +153,32 @@ export async function fetchRecentSessions(userId: string, limit = 10) {
   return data || [];
 }
 
+export async function fetchAttemptedQuestions(
+  userId: string,
+  opts: { chapterId?: string; subtopicId?: string; limit?: number } = {},
+) {
+  let q = supabase
+    .from("user_answers")
+    .select(`
+      id, session_id, question_id, selected_option, is_correct, answered_at,
+      questions:question_id(id, question_text, option_a, option_b, option_c, option_d, correct_option, explanation, difficulty, source, chapter_id, subtopic_id)
+    `)
+    .eq("user_id", userId)
+    .order("answered_at", { ascending: false })
+    .limit(opts.limit ?? 500);
+
+  if (opts.subtopicId) {
+    // filter via the joined question's subtopic_id
+    q = q.eq("questions.subtopic_id", opts.subtopicId);
+  } else if (opts.chapterId) {
+    q = q.eq("questions.chapter_id", opts.chapterId);
+  }
+
+  const { data } = await q;
+  // supabase join filter returns rows with null questions when they don't match — drop those
+  return (data || []).filter((row: any) => row.questions !== null);
+}
+
 export async function fetchWrongAnswers(userId: string, limit = 50) {
   const { data } = await supabase
     .from("user_answers")
