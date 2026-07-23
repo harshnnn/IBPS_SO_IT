@@ -19,6 +19,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [featuredQuizzes, setFeaturedQuizzes] = useState<FeaturedQuiz[]>([]);
   const [featuredAttempts, setFeaturedAttempts] = useState<Record<string, FeaturedQuizAttempt>>({});
   const [featuredCreator, setFeaturedCreator] = useState<Record<string, string>>({});
+  const [featuredTotalCount, setFeaturedTotalCount] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -31,13 +32,21 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         setStats(s);
         setRecent(r);
 
-        // Fetch featured quizzes and user attempts
+        // Fetch latest featured quiz and user attempts
         const { data: fqs } = await supabase
           .from("featured_quizzes")
           .select("*")
           .eq("is_active", true)
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(1);
         setFeaturedQuizzes((fqs || []) as FeaturedQuiz[]);
+
+        // Also get the total count for "View All (N)"
+        const { count } = await supabase
+          .from("featured_quizzes")
+          .select("*", { count: "exact", head: true })
+          .eq("is_active", true);
+        setFeaturedTotalCount(count || 0);
 
         const { data: attempts } = await supabase
           .from("featured_quiz_attempts")
@@ -160,30 +169,40 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           </button>
         </div>
 
-        {/* Featured Quiz Mock cards */}
+        {/* Latest Featured Mock Test */}
         {featuredQuizzes.length > 0 && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-amber-500" />
-              <h2 className="font-semibold text-slate-900">Featured Mock Tests</h2>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-500" />
+                <h2 className="font-semibold text-slate-900">Latest Mock Test</h2>
+              </div>
+              <button
+                onClick={() => onNavigate("featured-mocks")}
+                className="text-sm text-blue-600 font-medium hover:text-blue-700 flex items-center gap-0.5"
+              >
+                View All ({featuredTotalCount}) <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-            {featuredQuizzes.map((fq) => {
+            {(() => {
+              const fq = featuredQuizzes[0];
               const att = featuredAttempts[fq.id];
               const completed = !!att;
               const score = att ? (att.correct_count / att.total_questions) * 100 : 0;
-              const creatorName = featuredCreator[fq.created_by] || "Admin";
+              const creatorName = featuredCreator[fq.created_by] || "Unknown";
               return (
-                <Card key={fq.id} className="p-5">
+                <Card key={fq.id} className="p-5 ring-1 ring-amber-200">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-slate-900">{fq.title}</h3>
+                        <Badge color="amber">Latest</Badge>
                         {completed ? (
                           <Badge color="green">Completed</Badge>
                         ) : (
                           <Badge color="blue">Not Attempted</Badge>
                         )}
                       </div>
+                      <h3 className="font-semibold text-slate-900 mt-1">{fq.title}</h3>
                       <p className="text-xs text-slate-400 mb-3">Shared by {creatorName}</p>
                       <div className="flex flex-wrap gap-3 text-sm">
                         <span className="flex items-center gap-1 text-slate-600">
@@ -216,7 +235,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   </div>
                 </Card>
               );
-            })}
+            })()}
           </div>
         )}
 
@@ -390,6 +409,7 @@ export function BottomNav({ active, onNavigate }: { active: string; onNavigate: 
   const items = [
     { id: "dashboard", label: "Home", icon: Brain },
     { id: "quiz-setup", label: "Quiz", icon: Target },
+    { id: "featured-mocks", label: "Mocks", icon: Trophy },
     { id: "progress", label: "Progress", icon: TrendingUp },
     { id: "manage", label: "Questions", icon: BookOpen },
   ];

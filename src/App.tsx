@@ -12,6 +12,7 @@ import AttemptedQuestions from "./screens/AttemptedQuestions";
 import Manage from "./screens/Manage";
 import FeaturedQuiz from "./screens/FeaturedQuiz";
 import FeaturedQuizResult from "./screens/FeaturedQuizResult";
+import FeaturedMocks from "./screens/FeaturedMocks";
 import { Spinner } from "./components/ui";
 
 function AppContent() {
@@ -56,6 +57,8 @@ function AppContent() {
       return <FeaturedQuiz onNavigate={navigate} params={params} />;
     case "featured-quiz-result":
       return <FeaturedQuizResult onNavigate={navigate} params={params} />;
+    case "featured-mocks":
+      return <FeaturedMocks onNavigate={navigate} />;
     default:
       return <Dashboard onNavigate={navigate} />;
   }

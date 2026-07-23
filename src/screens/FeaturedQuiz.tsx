@@ -6,7 +6,7 @@ import { CircularProgress } from "../components/CircularProgress";
 import { BottomNav } from "./Dashboard";
 import {
   ArrowLeft, Clock, Target, Award, Play, Eye, XCircle, Trash2,
-  CheckCircle, X, BookOpen, Lightbulb, Brain, AlertTriangle, Link2,
+  CheckCircle, X, BookOpen, Lightbulb, Brain, AlertTriangle, Link2, Pencil,
 } from "lucide-react";
 
 interface FeaturedQuizProps {
@@ -23,6 +23,12 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
   const [attempt, setAttempt] = useState<FeaturedQuizAttempt | null>(null);
   const [answers, setAnswers] = useState<FeaturedQuizAnswer[]>([]);
   const [creatorEmail, setCreatorEmail] = useState("");
+  const [isCreator, setIsCreator] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDuration, setEditDuration] = useState(30);
+  const [editDifficulty, setEditDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [editSaving, setEditSaving] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -52,13 +58,15 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
 
         if (fq) {
           const { data: creator } = await supabase
-            .from("auth")
+            .from("user_profiles")
             .select("email")
-            .eq("id", fq.created_by)
+            .eq("user_id", fq.created_by)
             .maybeSingle();
-          // auth.users isn't queryable via anon; use a profile-like approach
-          // Instead fetch from users table if exists, else show "Admin"
-          setCreatorEmail(creator?.email || "Admin");
+          setCreatorEmail(creator?.email || "Unknown");
+          setIsCreator(user?.id === fq.created_by);
+          setEditTitle(fq.title);
+          setEditDuration(fq.duration_minutes);
+          setEditDifficulty(fq.difficulty);
         }
       } finally {
         setLoading(false);
@@ -73,6 +81,28 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
       questions: JSON.stringify(questions),
       durationMinutes: String(quiz?.duration_minutes || 30),
     });
+  };
+
+  const saveEdit = async () => {
+    if (!quiz || !editTitle.trim()) return;
+    setEditSaving(true);
+    try {
+      const { error } = await supabase
+        .from("featured_quizzes")
+        .update({
+          title: editTitle.trim(),
+          duration_minutes: editDuration,
+          difficulty: editDifficulty,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", quiz.id);
+      if (error) throw error;
+      setQuiz({ ...quiz, title: editTitle.trim(), duration_minutes: editDuration, difficulty: editDifficulty });
+      setShowEdit(false);
+    } catch (err: any) {
+      alert(err.message || "Failed to save changes");
+    }
+    setEditSaving(false);
   };
 
   // Load answers from params if we just returned from result
@@ -142,10 +172,76 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="font-bold text-base truncate">{quiz.title}</h1>
-            <p className="text-xs text-slate-400">Shared by {creatorEmail}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-slate-400">Shared by {creatorEmail}</p>
+              {isCreator && (
+                <button
+                  onClick={() => setShowEdit(true)}
+                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                >
+                  <Pencil className="w-3 h-3" /> Edit
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
+
+      {/* Edit modal for creator */}
+      {showEdit && quiz && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowEdit(false)}>
+          <Card className="p-6 w-full max-w-md" onClick={(e: any) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-4">
+              <Pencil className="w-5 h-5 text-blue-600" />
+              <h2 className="font-bold text-slate-900">Edit Mock Test</h2>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Title</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Duration (minutes)</label>
+                <input
+                  type="number"
+                  value={editDuration}
+                  onChange={(e) => setEditDuration(Number(e.target.value))}
+                  min={1}
+                  max={180}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Difficulty</label>
+                <div className="flex gap-2">
+                  {(["easy", "medium", "hard"] as const).map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setEditDifficulty(d)}
+                      className={`flex-1 py-2 rounded-xl text-sm font-medium capitalize transition-all ${
+                        editDifficulty === d ? "bg-blue-600 text-white" : "bg-white border border-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button variant="secondary" onClick={() => setShowEdit(false)} className="flex-1">Cancel</Button>
+                <Button onClick={saveEdit} disabled={!editTitle || editSaving} className="flex-1">
+                  {editSaving ? <Spinner size={16} /> : "Save Changes"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
         {/* Tabs */}
@@ -226,7 +322,7 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
                     <div className="text-center">
                       <p className="text-sm font-bold text-slate-600">{Math.floor(attempt.time_taken_seconds / 60)}m {attempt.time_taken_seconds % 60}s</p>
                       <p className="text-xs text-slate-400">Time</p>
-    sc                </div>
+                    </div>
                   </div>
                 </div>
               ) : null}
