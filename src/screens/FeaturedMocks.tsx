@@ -19,21 +19,30 @@ export default function FeaturedMocks({ onNavigate }: FeaturedMocksProps) {
     if (!user) return;
     (async () => {
       try {
-        const [{ data: fqs }, { data: attempts }] = await Promise.all([
-          supabase
-            .from("featured_quizzes")
-            .select("*, user_profiles!featured_quizzes_created_by_fkey1(email)")
-            .eq("is_active", true)
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("featured_quiz_attempts")
-            .select("featured_quiz_id")
-            .eq("user_id", user.id),
-        ]);
+        const { data: fqs } = await supabase
+          .from("featured_quizzes")
+          .select("*")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false });
+
+        const { data: attempts } = await supabase
+          .from("featured_quiz_attempts")
+          .select("featured_quiz_id")
+          .eq("user_id", user.id);
+
+        const creatorIds = Array.from(new Set((fqs || []).map((q: any) => q.created_by)));
+        const creatorMap: Record<string, string> = {};
+        if (creatorIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("user_profiles")
+            .select("user_id, email")
+            .in("user_id", creatorIds);
+          (profiles || []).forEach((p: any) => { creatorMap[p.user_id] = p.email; });
+        }
 
         const mapped = (fqs || []).map((fq: any) => ({
           ...fq,
-          creator_email: fq.user_profiles?.email,
+          creator_email: creatorMap[fq.created_by] || "Unknown",
         })) as FeaturedQuizWithCreator[];
 
         setQuizzes(mapped);
