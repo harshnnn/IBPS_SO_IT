@@ -121,8 +121,8 @@ export default function Manage({ onNavigate }: ManageProps) {
       if (!q.question) errors.push(`Q${num}: missing "question" field`);
       if (!q.options || !Array.isArray(q.options) || q.options.length < 4)
         errors.push(`Q${num}: "options" must be an array with at least 4 items`);
-      if (!q.answer || !"abcdABCD".includes(q.answer))
-        errors.push(`Q${num}: "answer" must be A, B, C, or D`);
+      if (!q.answer || !"abcdeABCDE".includes(q.answer))
+        errors.push(`Q${num}: "answer" must be A, B, C, D, or E`);
       if (q.difficulty && !["easy", "medium", "hard", "Easy", "Medium", "Hard"].includes(q.difficulty))
         errors.push(`Q${num}: "difficulty" must be easy, medium, or hard`);
     });
@@ -188,7 +188,7 @@ export default function Manage({ onNavigate }: ManageProps) {
         const optionExplanations: Record<string, string> = {};
         (options || []).forEach((opt: any) => {
           const key = (opt.id || "").toLowerCase();
-          if ("abcd".includes(key) && opt.explanation) {
+          if ("abcde".includes(key) && opt.explanation) {
             optionExplanations[key] = opt.explanation;
           }
         });
@@ -204,6 +204,7 @@ export default function Manage({ onNavigate }: ManageProps) {
           option_b: options[1]?.text || options[1] || "",
           option_c: options[2]?.text || options[2] || "",
           option_d: options[3]?.text || options[3] || "",
+          option_e: options[4]?.text || options[4] || null,
           correct_option: answer,
           explanation: options.find((o: any) => (o.id || "").toLowerCase() === answer)?.explanation || q.summary?.explanation || null,
           exam_tip: q.examTip || null,

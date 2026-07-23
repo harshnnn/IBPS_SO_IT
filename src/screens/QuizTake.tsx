@@ -36,6 +36,7 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
           option_b: q.option_b,
           option_c: q.option_c,
           option_d: q.option_d,
+          option_e: q.option_e || null,
           correct_option: q.correct_option,
           explanation: q.explanation || null,
           source: "featured" as any,
@@ -114,6 +115,7 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
     { key: "b", text: q.option_b },
     { key: "c", text: q.option_c },
     { key: "d", text: q.option_d },
+    ...(q.option_e ? [{ key: "e" as Option, text: q.option_e }] : []),
   ];
 
   const selectAnswer = (opt: Option) => {

@@ -13,7 +13,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export type Option = "a" | "b" | "c" | "d";
+export type Option = "a" | "b" | "c" | "d" | "e";
 
 export interface Chapter {
   id: string;
@@ -40,6 +40,7 @@ export interface Question {
   option_b: string;
   option_c: string;
   option_d: string;
+  option_e?: string | null;
   correct_option: Option;
   explanation: string | null;
   source: "manual" | "ai" | "chatgpt" | "youtube";
@@ -121,6 +122,7 @@ export interface FeaturedQuestion {
   option_b: string;
   option_c: string;
   option_d: string;
+  option_e: string | null;
   correct_option: Option;
   explanation: string | null;
   exam_tip: string | null;

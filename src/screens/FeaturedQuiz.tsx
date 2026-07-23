@@ -369,7 +369,7 @@ function ReviewTab({
               </div>
 
               <div className="space-y-1.5 ml-8">
-                {(["a", "b", "c", "d"] as Option[]).map((opt) => {
+                {(["a", "b", "c", "d", ...(q.option_e ? ["e" as Option] : [])] as Option[]).map((opt) => {
                   const isUser = userAnswer === opt;
                   const isRight = q.correct_option === opt;
                   return (
@@ -405,7 +405,7 @@ function RichQuestionDetails({ q }: { q: FeaturedQuestion }) {
       {Object.keys(optionExps).length > 0 && (
         <div className="p-3 bg-slate-50 rounded-lg">
           <p className="text-xs font-medium text-slate-500 mb-2">Option Explanations</p>
-          {(["a", "b", "c", "d"] as Option[]).map((opt) =>
+          {(["a", "b", "c", "d", ...(q.option_e ? ["e" as Option] : [])] as Option[]).map((opt) =>
             optionExps[opt] ? (
               <div key={opt} className="text-sm text-slate-700 mb-1.5">
                 <span className="font-bold uppercase">{opt}.</span> {optionExps[opt]}
