@@ -10,6 +10,8 @@ import ChapterDetail from "./screens/ChapterDetail";
 import Mistakes from "./screens/Mistakes";
 import AttemptedQuestions from "./screens/AttemptedQuestions";
 import Manage from "./screens/Manage";
+import FeaturedQuiz from "./screens/FeaturedQuiz";
+import FeaturedQuizResult from "./screens/FeaturedQuizResult";
 import { Spinner } from "./components/ui";
 
 function AppContent() {
@@ -50,6 +52,10 @@ function AppContent() {
       return <ChapterDetail onNavigate={navigate} params={params} />;
     case "manage":
       return <Manage onNavigate={navigate} />;
+    case "featured-quiz":
+      return <FeaturedQuiz onNavigate={navigate} params={params} />;
+    case "featured-quiz-result":
+      return <FeaturedQuizResult onNavigate={navigate} params={params} />;
     default:
       return <Dashboard onNavigate={navigate} />;
   }

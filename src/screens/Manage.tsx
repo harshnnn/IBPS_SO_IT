@@ -3,7 +3,7 @@ import { useAuth } from "../lib/auth";
 import { supabase, type Chapter, type Subtopic, type Question, type Option } from "../lib/supabase";
 import { Card, Button, Badge, Spinner, EmptyState } from "../components/ui";
 import { BottomNav } from "./Dashboard";
-import { Plus, Sparkles, Trash2, FileText, Link2, Youtube, MessageSquare, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, Sparkles, Trash2, FileText, Link2, Youtube, MessageSquare, CheckCircle, AlertCircle, Trophy, Clipboard } from "lucide-react";
 
 interface ManageProps {
   onNavigate: (screen: string, params?: Record<string, string>) => void;
@@ -15,7 +15,18 @@ export default function Manage({ onNavigate }: ManageProps) {
   const [subtopics, setSubtopics] = useState<Subtopic[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"add" | "import" | "list">("add");
+  const [tab, setTab] = useState<"add" | "import" | "featured" | "list">("add");
+
+  // Featured Quiz Mock creation
+  const [fqJson, setFqJson] = useState("");
+  const [fqTitle, setFqTitle] = useState("Featured Quiz Mock #1");
+  const [fqDuration, setFqDuration] = useState(30);
+  const [fqDifficulty, setFqDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [fqImportCount, setFqImportCount] = useState(25);
+  const [fqSaving, setFqSaving] = useState(false);
+  const [fqError, setFqError] = useState("");
+  const [fqSuccess, setFqSuccess] = useState("");
+  const [existingFeaturedQuizzes, setExistingFeaturedQuizzes] = useState<any[]>([]);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedSubtopic, setSelectedSubtopic] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -66,7 +77,156 @@ export default function Manage({ onNavigate }: ManageProps) {
 
   useEffect(() => {
     if (tab === "list") loadQuestions();
+    if (tab === "featured") loadFeaturedQuizzes();
   }, [tab]);
+
+  const loadFeaturedQuizzes = async () => {
+    const { data } = await supabase
+      .from("featured_quizzes")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setExistingFeaturedQuizzes(data || []);
+  };
+
+  const validateAndSaveFeaturedQuiz = async () => {
+    if (!user) return;
+    setFqError("");
+    setFqSuccess("");
+
+    let parsed: any[];
+    try {
+      parsed = JSON.parse(fqJson);
+    } catch (e: any) {
+      setFqError("Invalid JSON: " + e.message);
+      return;
+    }
+
+    if (!Array.isArray(parsed)) {
+      setFqError("JSON must be an array of question objects.");
+      return;
+    }
+
+    if (parsed.length === 0) {
+      setFqError("No questions found in the JSON array.");
+      return;
+    }
+
+    // Take only the requested number of questions
+    const toImport = parsed.slice(0, fqImportCount);
+
+    // Validate each question
+    const errors: string[] = [];
+    toImport.forEach((q, i) => {
+      const num = i + 1;
+      if (!q.question) errors.push(`Q${num}: missing "question" field`);
+      if (!q.options || !Array.isArray(q.options) || q.options.length < 4)
+        errors.push(`Q${num}: "options" must be an array with at least 4 items`);
+      if (!q.answer || !"abcdABCD".includes(q.answer))
+        errors.push(`Q${num}: "answer" must be A, B, C, or D`);
+      if (q.difficulty && !["easy", "medium", "hard", "Easy", "Medium", "Hard"].includes(q.difficulty))
+        errors.push(`Q${num}: "difficulty" must be easy, medium, or hard`);
+    });
+
+    if (errors.length > 0) {
+      setFqError("Validation errors:\n• " + errors.join("\n• "));
+      return;
+    }
+
+    setFqSaving(true);
+    try {
+      // Create or update featured quiz
+      const slug = fqTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const { data: existingQuiz } = await supabase
+        .from("featured_quizzes")
+        .select("*")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      let quizId: string;
+
+      if (existingQuiz) {
+        // Update existing quiz
+        const { data: updated, error: updErr } = await supabase
+          .from("featured_quizzes")
+          .update({
+            title: fqTitle,
+            duration_minutes: fqDuration,
+            difficulty: fqDifficulty,
+            question_count: toImport.length,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingQuiz.id)
+          .select()
+          .single();
+        if (updErr) throw updErr;
+        quizId = updated.id;
+        // Delete old questions
+        await supabase.from("featured_questions").delete().eq("featured_quiz_id", quizId);
+      } else {
+        const { data: newQuiz, error: quizErr } = await supabase
+          .from("featured_quizzes")
+          .insert({
+            title: fqTitle,
+            slug,
+            description: `A ${fqDifficulty} mock test with ${toImport.length} questions.`,
+            duration_minutes: fqDuration,
+            difficulty: fqDifficulty,
+            question_count: toImport.length,
+            created_by: user.id,
+            is_active: true,
+          })
+          .select()
+          .single();
+        if (quizErr) throw quizErr;
+        quizId = newQuiz.id;
+      }
+
+      // Insert questions
+      const rows = toImport.map((q, i) => {
+        const answer = q.answer.toLowerCase();
+        const options = q.options;
+        const optionExplanations: Record<string, string> = {};
+        (options || []).forEach((opt: any) => {
+          const key = (opt.id || "").toLowerCase();
+          if ("abcd".includes(key) && opt.explanation) {
+            optionExplanations[key] = opt.explanation;
+          }
+        });
+
+        return {
+          featured_quiz_id: quizId,
+          position: i + 1,
+          chapter: q.chapter || "General",
+          subtopic: q.subtopic || "General",
+          difficulty: (q.difficulty || "medium").toLowerCase(),
+          question_text: q.question,
+          option_a: options[0]?.text || options[0] || "",
+          option_b: options[1]?.text || options[1] || "",
+          option_c: options[2]?.text || options[2] || "",
+          option_d: options[3]?.text || options[3] || "",
+          correct_option: answer,
+          explanation: options.find((o: any) => (o.id || "").toLowerCase() === answer)?.explanation || q.summary?.explanation || null,
+          exam_tip: q.examTip || null,
+          memory_trick: q.memoryTrick || null,
+          common_mistake: q.commonMistake || null,
+          related_concepts: q.relatedConcepts || [],
+          summary_title: q.summary?.title || null,
+          summary_explanation: q.summary?.explanation || null,
+          option_explanations: optionExplanations,
+        };
+      });
+
+      const { error: qErr } = await supabase.from("featured_questions").insert(rows);
+      if (qErr) throw qErr;
+
+      setFqSuccess(`Successfully saved "${fqTitle}" with ${rows.length} questions!`);
+      setFqJson("");
+      loadFeaturedQuizzes();
+    } catch (err: any) {
+      setFqError(err.message || "Failed to save featured quiz");
+    }
+    setFqSaving(false);
+  };
 
   const filteredSubtopics = subtopics.filter((s) => s.chapter_id === selectedChapter);
 
@@ -220,6 +380,14 @@ export default function Manage({ onNavigate }: ManageProps) {
             }`}
           >
             Import
+          </button>
+          <button
+            onClick={() => setTab("featured")}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+              tab === "featured" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+            }`}
+          >
+            Featured Mock
           </button>
           <button
             onClick={() => setTab("list")}
@@ -511,6 +679,125 @@ export default function Manage({ onNavigate }: ManageProps) {
                 </div>
               </div>
             </Card>
+          </>
+        ) : tab === "featured" ? (
+          <>
+            {/* Create Featured Quiz Mock */}
+            <Card className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Trophy className="w-5 h-5 text-amber-500" />
+                <h2 className="font-semibold text-slate-900">Create Featured Quiz Mock</h2>
+              </div>
+              <p className="text-sm text-slate-500 mb-4">
+                Paste a JSON array of questions to create a public mock test. Every user will be able to attempt it once and see their results. The quiz is editable — saving with the same title will update the existing quiz.
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Quiz Title</label>
+                  <input
+                    type="text"
+                    value={fqTitle}
+                    onChange={(e) => setFqTitle(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                    placeholder="Featured Quiz Mock #1"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Questions to Import</label>
+                    <input
+                      type="number"
+                      value={fqImportCount}
+                      onChange={(e) => setFqImportCount(Number(e.target.value))}
+                      min={1}
+                      max={100}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Duration (min)</label>
+                    <input
+                      type="number"
+                      value={fqDuration}
+                      onChange={(e) => setFqDuration(Number(e.target.value))}
+                      min={1}
+                      max={180}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Difficulty</label>
+                    <select
+                      value={fqDifficulty}
+                      onChange={(e) => setFqDifficulty(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white capitalize"
+                    >
+                      {["easy", "medium", "hard"].map((d) => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Questions JSON *</label>
+                  <textarea
+                    value={fqJson}
+                    onChange={(e) => { setFqJson(e.target.value); setFqError(""); setFqSuccess(""); }}
+                    rows={10}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-y"
+                    placeholder={`[\n  {\n    "id": 1,\n    "chapter": "DBMS",\n    "subtopic": "Normalization",\n    "difficulty": "Easy",\n    "question": "What is 3NF?",\n    "options": [\n      {"id": "A", "text": "...", "isCorrect": false, "explanation": "..."},\n      {"id": "B", "text": "...", "isCorrect": true, "explanation": "..."},\n      {"id": "C", "text": "...", "isCorrect": false, "explanation": "..."},\n      {"id": "D", "text": "...", "isCorrect": false, "explanation": "..."}\n    ],\n    "answer": "B",\n    "summary": {"title": "...", "explanation": "..."},\n    "examTip": "...",\n    "memoryTrick": "...",\n    "commonMistake": "...",\n    "relatedConcepts": []\n  }\n]`}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Paste a JSON array following the schema. Only the first {fqImportCount} questions will be imported.
+                  </p>
+                </div>
+
+                {fqError && (
+                  <div className="p-3 bg-red-50 rounded-xl">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <pre className="text-sm text-red-700 whitespace-pre-wrap font-sans">{fqError}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {fqSuccess && (
+                  <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                    <p className="text-sm text-emerald-800">{fqSuccess}</p>
+                  </div>
+                )}
+
+                <Button onClick={validateAndSaveFeaturedQuiz} disabled={!fqJson || fqSaving} className="w-full">
+                  {fqSaving ? (
+                    <span className="flex items-center justify-center gap-2"><Spinner size={16} /> Validating & saving...</span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2"><Trophy className="w-4 h-4" /> Validate & Save Featured Mock</span>
+                  )}
+                </Button>
+              </div>
+            </Card>
+
+            {/* Existing featured quizzes */}
+            {existingFeaturedQuizzes.length > 0 && (
+              <Card className="p-5">
+                <h3 className="font-semibold text-slate-900 mb-3">Existing Featured Quizzes</h3>
+                <div className="space-y-2">
+                  {existingFeaturedQuizzes.map((fq) => (
+                    <div key={fq.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{fq.title}</p>
+                        <p className="text-xs text-slate-400">{fq.question_count} questions • {fq.duration_minutes} min • {fq.difficulty}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {fq.is_active ? <Badge color="green">Active</Badge> : <Badge color="slate">Inactive</Badge>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
           </>
         ) : (
           /* List of my questions */

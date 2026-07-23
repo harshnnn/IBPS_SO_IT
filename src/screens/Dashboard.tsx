@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/auth";
-import { supabase } from "../lib/supabase";
+import { supabase, type FeaturedQuiz, type FeaturedQuizAttempt } from "../lib/supabase";
 import { fetchOverallStats, fetchRecentSessions, type OverallStats } from "../lib/analytics";
 import { Card, Button, ProgressBar, Badge, EmptyState, Spinner } from "../components/ui";
 import {
-  Brain, TrendingUp, TrendingDown, Target, Clock, ChevronRight, Award, AlertCircle, BookOpen,
+  Brain, TrendingUp, TrendingDown, Target, Clock, ChevronRight, Award, AlertCircle, BookOpen, Trophy,
 } from "lucide-react";
 
 interface DashboardProps {
@@ -16,6 +16,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [stats, setStats] = useState<OverallStats | null>(null);
   const [recent, setRecent] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [featuredQuizzes, setFeaturedQuizzes] = useState<FeaturedQuiz[]>([]);
+  const [featuredAttempts, setFeaturedAttempts] = useState<Record<string, FeaturedQuizAttempt>>({});
+  const [featuredCreator, setFeaturedCreator] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!user) return;
@@ -27,6 +30,34 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         ]);
         setStats(s);
         setRecent(r);
+
+        // Fetch featured quizzes and user attempts
+        const { data: fqs } = await supabase
+          .from("featured_quizzes")
+          .select("*")
+          .eq("is_active", true)
+          .order("created_at", { ascending: false });
+        setFeaturedQuizzes((fqs || []) as FeaturedQuiz[]);
+
+        const { data: attempts } = await supabase
+          .from("featured_quiz_attempts")
+          .select("*")
+          .eq("user_id", user.id);
+        const attMap: Record<string, FeaturedQuizAttempt> = {};
+        (attempts || []).forEach((a: any) => { attMap[a.featured_quiz_id] = a; });
+        setFeaturedAttempts(attMap);
+
+        // Fetch creator emails
+        const creatorIds = Array.from(new Set((fqs || []).map((q: any) => q.created_by)));
+        if (creatorIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("user_profiles")
+            .select("user_id, email")
+            .in("user_id", creatorIds);
+          const cMap: Record<string, string> = {};
+          (profiles || []).forEach((p: any) => { cMap[p.user_id] = p.email; });
+          setFeaturedCreator(cMap);
+        }
       } finally {
         setLoading(false);
       }
@@ -128,6 +159,66 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             </div>
           </button>
         </div>
+
+        {/* Featured Quiz Mock cards */}
+        {featuredQuizzes.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-500" />
+              <h2 className="font-semibold text-slate-900">Featured Mock Tests</h2>
+            </div>
+            {featuredQuizzes.map((fq) => {
+              const att = featuredAttempts[fq.id];
+              const completed = !!att;
+              const score = att ? (att.correct_count / att.total_questions) * 100 : 0;
+              const creatorName = featuredCreator[fq.created_by] || "Admin";
+              return (
+                <Card key={fq.id} className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-slate-900">{fq.title}</h3>
+                        {completed ? (
+                          <Badge color="green">Completed</Badge>
+                        ) : (
+                          <Badge color="blue">Not Attempted</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mb-3">Shared by {creatorName}</p>
+                      <div className="flex flex-wrap gap-3 text-sm">
+                        <span className="flex items-center gap-1 text-slate-600">
+                          <BookOpen className="w-4 h-4 text-slate-400" /> {fq.question_count} Questions
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-600">
+                          <Clock className="w-4 h-4 text-slate-400" /> {fq.duration_minutes} min
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-600 capitalize">
+                          <Target className="w-4 h-4 text-slate-400" /> {fq.difficulty}
+                        </span>
+                        {completed && (
+                          <span className="flex items-center gap-1 text-slate-600">
+                            <Award className="w-4 h-4 text-slate-400" /> {score.toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0">
+                      {completed ? (
+                        <Button variant="secondary" onClick={() => onNavigate("featured-quiz", { quizId: fq.id, attemptId: att.id })}>
+                          <span className="flex items-center gap-1.5">Review <ChevronRight className="w-4 h-4" /></span>
+                        </Button>
+                      ) : (
+                        <Button onClick={() => onNavigate("featured-quiz", { quizId: fq.id })}>
+                          <span className="flex items-center gap-1.5">Start <ChevronRight className="w-4 h-4" /></span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
 
         {/* Strong / Weak summary */}
         {(stats?.strongChapters.length || stats?.weakChapters.length) ? (
