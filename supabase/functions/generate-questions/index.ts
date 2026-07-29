@@ -249,7 +249,7 @@ async function generateWithOpenAI(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-5.1",
       messages: [
         { role: "system", content: "You are an IBPS SO IT exam question generator. Output only valid JSON." },
         { role: "user", content: prompt },
