@@ -61,45 +61,128 @@ Deno.serve(async (req: Request) => {
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
 
+    console.log("========== DEBUG ==========");
+    console.log("Has OpenAI Key:", !!openaiKey);
+    console.log("Has Gemini Key:", !!geminiKey);
+    console.log("Chapter:", chapterName);
+    console.log("Subtopic:", subtopicName);
+    console.log("Count:", count);
+    console.log("===========================");
+
     let questions: QuestionPayload[] = [];
     let usedFallback = false;
     let aiSource = "fallback";
 
-    // Try OpenAI first (best quality), then Gemini, then static fallback bank
+    // Try OpenAI first, then Gemini
     if (openaiKey) {
       try {
-        questions = await generateWithOpenAI(openaiKey, chapterName, subtopicName, count, difficulty);
+        questions = await generateWithOpenAI(
+          openaiKey,
+          chapterName,
+          subtopicName,
+          count,
+          difficulty
+        );
         aiSource = "openai";
       } catch (openaiErr) {
-        console.warn("OpenAI generation failed:", openaiErr.message);
+        console.error("========== OPENAI ERROR ==========");
+        console.error(openaiErr);
+
         if (geminiKey) {
           try {
-            questions = await generateWithGemini(geminiKey, chapterName, subtopicName, count, difficulty);
+            questions = await generateWithGemini(
+              geminiKey,
+              chapterName,
+              subtopicName,
+              count,
+              difficulty
+            );
             aiSource = "gemini";
           } catch (geminiErr) {
-            console.warn("Gemini generation failed, using fallback:", geminiErr.message);
-            questions = generateFallback(chapterName, subtopicName, count, difficulty);
-            usedFallback = true;
+            console.error("========== GEMINI ERROR ==========");
+            console.error(geminiErr);
+
+            return new Response(
+              JSON.stringify({
+                provider: "gemini",
+                openaiError:
+                  openaiErr instanceof Error
+                    ? openaiErr.message
+                    : String(openaiErr),
+                geminiError:
+                  geminiErr instanceof Error
+                    ? geminiErr.message
+                    : String(geminiErr),
+              }),
+              {
+                status: 500,
+                headers: {
+                  ...corsHeaders,
+                  "Content-Type": "application/json",
+                },
+              }
+            );
           }
         } else {
-          questions = generateFallback(chapterName, subtopicName, count, difficulty);
-          usedFallback = true;
+          return new Response(
+            JSON.stringify({
+              error: "No Gemini API key configured after OpenAI failed.",
+            }),
+            {
+              status: 500,
+              headers: {
+                ...corsHeaders,
+                "Content-Type": "application/json",
+              },
+            }
+          );
         }
       }
     } else if (geminiKey) {
       try {
-        questions = await generateWithGemini(geminiKey, chapterName, subtopicName, count, difficulty);
+        questions = await generateWithGemini(
+          geminiKey,
+          chapterName,
+          subtopicName,
+          count,
+          difficulty
+        );
         aiSource = "gemini";
-      } catch (aiErr) {
-        console.warn("Gemini generation failed, using fallback:", aiErr.message);
-        questions = generateFallback(chapterName, subtopicName, count, difficulty);
-        usedFallback = true;
+      } catch (geminiErr) {
+        console.error("========== GEMINI ERROR ==========");
+        console.error(geminiErr);
+
+        return new Response(
+          JSON.stringify({
+            provider: "gemini",
+            error:
+              geminiErr instanceof Error
+                ? geminiErr.message
+                : String(geminiErr),
+          }),
+          {
+            status: 500,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
+        );
       }
     } else {
-      questions = generateFallback(chapterName, subtopicName, count, difficulty);
-      usedFallback = true;
+      return new Response(
+        JSON.stringify({
+          error: "Neither OPENAI_API_KEY nor GEMINI_API_KEY exists.",
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     }
-
     if (saveToDb) {
       // Find chapter and subtopic IDs
       const { data: chapter } = await supabase
