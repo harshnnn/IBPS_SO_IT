@@ -14,7 +14,7 @@ interface FeaturedQuizProps {
   params: Record<string, string>;
 }
 
-type Tab = "overview" | "review" | "mistakes";
+type Tab = "overview" | "review" | "mistakes" | "manage";
 
 export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) {
   const { user } = useAuth();
@@ -33,6 +33,17 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<FeaturedQuestion | null>(null);
+  const [editQText, setEditQText] = useState("");
+  const [editQOptions, setEditQOptions] = useState<Record<string, string>>({ a: "", b: "", c: "", d: "", e: "" });
+  const [editQHasE, setEditQHasE] = useState(false);
+  const [editQCorrect, setEditQCorrect] = useState<Option>("a");
+  const [editQExplanation, setEditQExplanation] = useState("");
+  const [editQExamTip, setEditQExamTip] = useState("");
+  const [editQMemoryTrick, setEditQMemoryTrick] = useState("");
+  const [editQCommonMistake, setEditQCommonMistake] = useState("");
+  const [editQSaving, setEditQSaving] = useState(false);
+  const [recalcNotice, setRecalcNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user || !params.quizId) return;
@@ -110,6 +121,74 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
       alert(err.message || "Failed to save changes");
     }
     setEditSaving(false);
+  };
+
+  const saveQuestionEdit = async () => {
+    if (!editingQuestion || !quiz) return;
+    setEditQSaving(true);
+    try {
+      const updateData: Record<string, any> = {
+        question_text: editQText.trim(),
+        option_a: editQOptions.a.trim(),
+        option_b: editQOptions.b.trim(),
+        option_c: editQOptions.c.trim(),
+        option_d: editQOptions.d.trim(),
+        option_e: editQHasE ? editQOptions.e.trim() : null,
+        correct_option: editQCorrect,
+        explanation: editQExplanation.trim() || null,
+        exam_tip: editQExamTip.trim() || null,
+        memory_trick: editQMemoryTrick.trim() || null,
+        common_mistake: editQCommonMistake.trim() || null,
+      };
+
+      const { error } = await supabase
+        .from("featured_questions")
+        .update(updateData)
+        .eq("id", editingQuestion.id);
+      if (error) throw error;
+
+      const { data: recalcResult, error: recalcErr } = await supabase
+        .rpc("recalculate_featured_quiz_scores", { p_quiz_id: quiz.id });
+      if (recalcErr) throw recalcErr;
+
+      const { data: refreshedQs } = await supabase
+        .from("featured_questions")
+        .select("*")
+        .eq("featured_quiz_id", quiz.id)
+        .order("position");
+      setQuestions((refreshedQs || []) as FeaturedQuestion[]);
+
+      if (user) {
+        const { data: atts } = await supabase
+          .from("featured_quiz_attempts")
+          .select("*")
+          .eq("featured_quiz_id", quiz.id)
+          .eq("user_id", user.id)
+          .order("completed_at", { ascending: false });
+        const latestAtt = (atts && atts.length > 0) ? atts[0] as FeaturedQuizAttempt : null;
+        if (latestAtt) {
+          setAttempt(latestAtt);
+          setAttemptCount(atts!.length);
+          const { data: ans } = await supabase
+            .from("featured_quiz_answers")
+            .select("*")
+            .eq("attempt_id", latestAtt.id)
+            .order("answered_at");
+          setAnswers((ans || []) as FeaturedQuizAnswer[]);
+        }
+      }
+
+      if (recalcResult && recalcResult.length > 0) {
+        const r = recalcResult[0] as any;
+        setRecalcNotice(`Scores recalculated: ${r.attempts_updated} attempt(s) updated, ${r.answers_corrected} correct answer(s).`);
+      } else {
+        setRecalcNotice("Question saved. No attempts to recalculate.");
+      }
+      setEditingQuestion(null);
+    } catch (err: any) {
+      alert(err.message || "Failed to save question");
+    }
+    setEditQSaving(false);
   };
 
   // Load answers from params if we just returned from result
@@ -255,7 +334,7 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-5">
         {/* Tabs */}
-        {completed && (
+        {(completed || isCreator) && (
           <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
             <button
               onClick={() => setTab("overview")}
@@ -263,18 +342,30 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
             >
               Overview
             </button>
-            <button
-              onClick={() => setTab("review")}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === "review" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
-            >
-              Review
-            </button>
-            <button
-              onClick={() => setTab("mistakes")}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === "mistakes" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
-            >
-              Mistakes ({mistakes.length})
-            </button>
+            {completed && (
+              <button
+                onClick={() => setTab("review")}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === "review" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+              >
+                Review
+              </button>
+            )}
+            {completed && (
+              <button
+                onClick={() => setTab("mistakes")}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === "mistakes" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+              >
+                Mistakes ({mistakes.length})
+              </button>
+            )}
+            {isCreator && (
+              <button
+                onClick={() => setTab("manage")}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === "manage" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+              >
+                Manage
+              </button>
+            )}
           </div>
         )}
 
@@ -376,6 +467,34 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
           <ReviewTab questions={questions} answers={answers} expandedId={expandedId} setExpandedId={setExpandedId} />
         )}
 
+        {/* Manage Questions Tab (creator only) */}
+        {tab === "manage" && isCreator && (
+          <>
+            {recalcNotice && (
+              <div className="p-3 bg-emerald-50 rounded-xl text-sm text-emerald-800 flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                {recalcNotice}
+              </div>
+            )}
+            <ManageQuestionsTab
+              questions={questions}
+              attempt={attempt}
+              onEditQuestion={(q) => {
+                setEditingQuestion(q);
+                setEditQText(q.question_text);
+                setEditQOptions({ a: q.option_a, b: q.option_b, c: q.option_c, d: q.option_d, e: q.option_e || "" });
+                setEditQHasE(!!q.option_e);
+                setEditQCorrect(q.correct_option);
+                setEditQExplanation(q.explanation || "");
+                setEditQExamTip(q.exam_tip || "");
+                setEditQMemoryTrick(q.memory_trick || "");
+                setEditQCommonMistake(q.common_mistake || "");
+                setRecalcNotice(null);
+              }}
+            />
+          </>
+        )}
+
         {/* Mistakes Tab */}
         {tab === "mistakes" && completed && (
           <>
@@ -443,7 +562,169 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
         )}
       </main>
 
+      {/* Question edit modal (creator only) */}
+      {editingQuestion && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto" onClick={() => setEditingQuestion(null)}>
+          <Card className="p-6 w-full max-w-lg my-8" onClick={(e: any) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-blue-600" />
+                <h2 className="font-bold text-slate-900">Edit Question</h2>
+              </div>
+              <button onClick={() => setEditingQuestion(null)} className="p-1.5 rounded-lg hover:bg-slate-100">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Question Text</label>
+                <textarea
+                  value={editQText}
+                  onChange={(e) => setEditQText(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none"
+                />
+              </div>
+              {(["a", "b", "c", "d", ...(editQHasE ? ["e"] : [])] as const).map((opt) => (
+                <div key={opt}>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Option {opt.toUpperCase()}
+                    {editQCorrect === opt && <span className="ml-2 text-emerald-600 text-xs">(Correct)</span>}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={editQOptions[opt]}
+                      onChange={(e) => setEditQOptions({ ...editQOptions, [opt]: e.target.value })}
+                      className="flex-1 px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                    />
+                    <button
+                      onClick={() => setEditQCorrect(opt as Option)}
+                      className={`px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                        editQCorrect === opt ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      Set Correct
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div>
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={editQHasE} onChange={(e) => {
+                    setEditQHasE(e.target.checked);
+                    if (!e.target.checked && editQCorrect === "e") setEditQCorrect("a");
+                  }} className="rounded" />
+                  Has Option E (5 options)
+                </label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Explanation</label>
+                <textarea
+                  value={editQExplanation}
+                  onChange={(e) => setEditQExplanation(e.target.value)}
+                  rows={2}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Exam Tip (optional)</label>
+                <input
+                  type="text"
+                  value={editQExamTip}
+                  onChange={(e) => setEditQExamTip(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Memory Trick (optional)</label>
+                <input
+                  type="text"
+                  value={editQMemoryTrick}
+                  onChange={(e) => setEditQMemoryTrick(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Common Mistake (optional)</label>
+                <input
+                  type="text"
+                  value={editQCommonMistake}
+                  onChange={(e) => setEditQCommonMistake(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                />
+              </div>
+              <div className="p-3 bg-amber-50 rounded-xl text-xs text-amber-800">
+                Saving will automatically recalculate scores for all users who have attempted this mock.
+              </div>
+              <div className="flex gap-2 pt-1 sticky bottom-0 bg-white pb-1">
+                <Button variant="secondary" onClick={() => setEditingQuestion(null)} className="flex-1">Cancel</Button>
+                <Button onClick={saveQuestionEdit} disabled={!editQText.trim() || !editQOptions.a.trim() || !editQOptions.b.trim() || !editQOptions.c.trim() || !editQOptions.d.trim() || editQSaving} className="flex-1">
+                  {editQSaving ? <Spinner size={16} /> : "Save & Recalculate"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
       <BottomNav active="dashboard" onNavigate={onNavigate} />
+    </div>
+  );
+}
+
+// ---- Manage Questions Tab Component ----
+
+function ManageQuestionsTab({
+  questions, attempt, onEditQuestion,
+}: {
+  questions: FeaturedQuestion[];
+  attempt: FeaturedQuizAttempt | null;
+  onEditQuestion: (q: FeaturedQuestion) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <Card className="p-4">
+        <div className="flex items-start gap-2">
+          <BookOpen className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Manage Questions</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Edit any question's text, options, or correct answer. When you save, all existing attempt scores are automatically recalculated.
+              {attempt && <span className="block mt-1 text-emerald-600">Your latest score: {attempt.correct_count}/{attempt.total_questions}</span>}
+            </p>
+          </div>
+        </div>
+      </Card>
+      {questions.map((q, i) => (
+        <Card key={q.id} className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-400">Q{i + 1}</span>
+                <Badge color="slate">{q.chapter}</Badge>
+                <Badge color="amber">{q.difficulty}</Badge>
+              </div>
+              <p className="text-sm font-medium text-slate-900 leading-relaxed mb-2">{q.question_text}</p>
+              <div className="space-y-1">
+                {(["a", "b", "c", "d", ...(q.option_e ? ["e" as Option] : [])] as Option[]).map((opt) => (
+                  <div key={opt} className={`flex items-start gap-1.5 text-xs ${q.correct_option === opt ? "text-emerald-700 font-medium" : "text-slate-500"}`}>
+                    <span className="uppercase font-bold flex-shrink-0">{opt}.</span>
+                    <span className="flex-1 truncate">{(q as any)[`option_${opt}`]}</span>
+                    {q.correct_option === opt && <CheckCircle className="w-3 h-3 text-emerald-600 flex-shrink-0" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={() => onEditQuestion(q)}
+              className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors flex-shrink-0"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }
