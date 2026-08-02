@@ -109,7 +109,7 @@ export default function FeaturedMocks({ onNavigate }: FeaturedMocksProps) {
                       {attempted ? (
                         <Badge color="green">
                           <span className="flex items-center gap-1">
-                            <CheckCircle className="w-3 h-3" /> {(attemptCountMap[q.id] || 0) > 1 ? `Done x${attemptCountMap[q.id]}` : "Completed"}
+                            <CheckCircle className="w-3 h-3" /> {(attemptCountMap[quiz.id] || 0) > 1 ? `Done x${attemptCountMap[quiz.id]}` : "Completed"}
                           </span>
                         </Badge>
                       ) : (
