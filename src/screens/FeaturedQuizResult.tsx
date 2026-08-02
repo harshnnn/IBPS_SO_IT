@@ -3,7 +3,7 @@ import { useAuth } from "../lib/auth";
 import { supabase, type FeaturedQuestion, type Option } from "../lib/supabase";
 import { Card, Button, Badge, ProgressBar } from "../components/ui";
 import { CircularProgress } from "../components/CircularProgress";
-import { ArrowLeft, Check, X, Clock, Home, Eye, MinusCircle } from "lucide-react";
+import { ArrowLeft, Check, X, Clock, Home, Eye, MinusCircle, RotateCcw } from "lucide-react";
 
 interface FeaturedQuizResultProps {
   onNavigate: (screen: string, params?: Record<string, string>) => void;
@@ -135,6 +135,9 @@ export default function FeaturedQuizResult({ onNavigate, params }: FeaturedQuizR
             <span className="flex items-center justify-center gap-2"><Home className="w-4 h-4" /> Home</span>
           </Button>
         </div>
+        <Button onClick={() => onNavigate("featured-quiz", { quizId: params.featuredQuizId })} size="lg" className="w-full">
+          <span className="flex items-center justify-center gap-2"><RotateCcw className="w-4 h-4" /> Reattempt Mock Test</span>
+        </Button>
 
         {/* Chapter-wise performance */}
         {chapterPerf.length > 1 && (

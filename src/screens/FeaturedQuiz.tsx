@@ -6,7 +6,7 @@ import { CircularProgress } from "../components/CircularProgress";
 import { BottomNav } from "./Dashboard";
 import {
   ArrowLeft, Clock, Target, Award, Play, Eye, XCircle, Trash2,
-  CheckCircle, X, BookOpen, Lightbulb, Brain, AlertTriangle, Link2, Pencil,
+  CheckCircle, X, BookOpen, Lightbulb, Brain, AlertTriangle, Link2, Pencil, RotateCcw,
 } from "lucide-react";
 
 interface FeaturedQuizProps {
@@ -29,6 +29,7 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
   const [editDuration, setEditDuration] = useState(30);
   const [editDifficulty, setEditDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [editSaving, setEditSaving] = useState(false);
+  const [attemptCount, setAttemptCount] = useState(0);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -37,21 +38,23 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
     if (!user || !params.quizId) return;
     (async () => {
       try {
-        const [{ data: fq }, { data: fqs }, { data: att }] = await Promise.all([
+        const [{ data: fq }, { data: fqs }, { data: atts }] = await Promise.all([
           supabase.from("featured_quizzes").select("*").eq("id", params.quizId).maybeSingle(),
           supabase.from("featured_questions").select("*").eq("featured_quiz_id", params.quizId).order("position"),
-          supabase.from("featured_quiz_attempts").select("*").eq("featured_quiz_id", params.quizId).eq("user_id", user.id).maybeSingle(),
+          supabase.from("featured_quiz_attempts").select("*").eq("featured_quiz_id", params.quizId).eq("user_id", user.id).order("completed_at", { ascending: false }),
         ]);
 
         setQuiz(fq as FeaturedQuiz | null);
         setQuestions((fqs || []) as FeaturedQuestion[]);
 
-        if (att) {
-          setAttempt(att as FeaturedQuizAttempt);
+        const latestAtt = (atts && atts.length > 0) ? atts[0] as FeaturedQuizAttempt : null;
+        if (latestAtt) {
+          setAttempt(latestAtt);
+          setAttemptCount(atts.length);
           const { data: ans } = await supabase
             .from("featured_quiz_answers")
             .select("*")
-            .eq("attempt_id", att.id)
+            .eq("attempt_id", latestAtt.id)
             .order("answered_at");
           setAnswers((ans || []) as FeaturedQuizAnswer[]);
         }
@@ -83,6 +86,10 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
     });
   };
 
+  const reattempt = () => {
+    startQuiz();
+  };
+
   const saveEdit = async () => {
     if (!quiz || !editTitle.trim()) return;
     setEditSaving(true);
@@ -109,17 +116,20 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
   useEffect(() => {
     if (params.attemptId && params.attemptId !== "loaded" && !attempt) {
       (async () => {
-        const { data: att } = await supabase
+        const { data: atts2 } = await supabase
           .from("featured_quiz_attempts")
           .select("*")
-          .eq("id", params.attemptId)
-          .maybeSingle();
-        if (att) {
-          setAttempt(att as FeaturedQuizAttempt);
+          .eq("user_id", user!.id)
+          .eq("featured_quiz_id", params.quizId)
+          .order("completed_at", { ascending: false });
+        const latestAtt = (atts2 && atts2.length > 0) ? atts2[0] as FeaturedQuizAttempt : null;
+        if (latestAtt) {
+          setAttempt(latestAtt);
+          setAttemptCount(atts2!.length);
           const { data: ans } = await supabase
             .from("featured_quiz_answers")
             .select("*")
-            .eq("attempt_id", att.id)
+            .eq("attempt_id", latestAtt.id)
             .order("answered_at");
           setAnswers((ans || []) as FeaturedQuizAnswer[]);
           setTab("review");
@@ -328,13 +338,21 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
               ) : null}
 
               {completed ? (
-                <div className="flex gap-3">
-                  <Button variant="secondary" onClick={() => setTab("review")} className="flex-1">
-                    <span className="flex items-center justify-center gap-2"><Eye className="w-4 h-4" /> Review Answers</span>
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <Button variant="secondary" onClick={() => setTab("review")} className="flex-1">
+                      <span className="flex items-center justify-center gap-2"><Eye className="w-4 h-4" /> Review Answers</span>
+                    </Button>
+                    <Button variant="secondary" onClick={() => setTab("mistakes")} className="flex-1">
+                      <span className="flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> View Mistakes</span>
+                    </Button>
+                  </div>
+                  <Button onClick={reattempt} size="lg" className="w-full">
+                    <span className="flex items-center justify-center gap-2"><RotateCcw className="w-4 h-4" /> Reattempt Mock Test</span>
                   </Button>
-                  <Button variant="secondary" onClick={() => setTab("mistakes")} className="flex-1">
-                    <span className="flex items-center justify-center gap-2"><XCircle className="w-4 h-4" /> View Mistakes</span>
-                  </Button>
+                  {attemptCount > 1 && (
+                    <p className="text-center text-xs text-slate-400">You've attempted this mock {attemptCount} times</p>
+                  )}
                 </div>
               ) : (
                 <Button onClick={startQuiz} size="lg" className="w-full">
@@ -344,9 +362,9 @@ export default function FeaturedQuiz({ onNavigate, params }: FeaturedQuizProps) 
             </Card>
 
             {!completed && (
-              <div className="p-4 bg-amber-50 rounded-xl">
-                <p className="text-sm text-amber-800 leading-relaxed">
-                  <strong>Important:</strong> This mock test can only be attempted once. Once you start, the timer cannot be paused. Make sure you have enough time to complete all {quiz.question_count} questions.
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <p className="text-sm text-blue-800 leading-relaxed">
+                  <strong>Tip:</strong> You can pause the test at any time and resume when ready. You can also reattempt this mock test as many times as you'd like after completing it.
                 </p>
               </div>
             )}

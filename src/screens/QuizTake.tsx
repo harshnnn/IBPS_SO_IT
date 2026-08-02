@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../lib/auth";
 import { supabase, type Question, type Option, type FeaturedQuestion } from "../lib/supabase";
 import { Button, Card, ProgressBar, Spinner } from "../components/ui";
-import { ArrowLeft, Check, X, Clock, ChevronRight } from "lucide-react";
+import { ArrowLeft, Check, X, Clock, ChevronRight, Pause, Play } from "lucide-react";
 
 interface QuizTakeProps {
   onNavigate: (screen: string, params?: Record<string, string>) => void;
@@ -18,6 +18,7 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
   const [loading, setLoading] = useState(true);
   const [timeLeft, setTimeLeft] = useState(0);
   const [startTime] = useState(Date.now());
+  const [isPaused, setIsPaused] = useState(false);
   const isFeatured = params.mode === "featured";
   const submittedRef = useRef(false);
 
@@ -70,9 +71,9 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
     setLoading(false);
   }, []);
 
-  // Timer for featured quizzes
+  // Timer for featured quizzes — pauses when isPaused is true
   useEffect(() => {
-    if (!isFeatured || timeLeft <= 0) return;
+    if (!isFeatured || timeLeft <= 0 || isPaused) return;
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -87,7 +88,7 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [isFeatured, timeLeft]);
+  }, [isFeatured, timeLeft, isPaused]);
 
   if (loading) {
     return (
@@ -160,12 +161,19 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
     const incorrectCount = questions.filter((qq) => answers[qq.id] && answers[qq.id] !== qq.correct_option).length;
     const skippedCount = questions.filter((qq) => !answers[qq.id]).length;
 
-    // Create featured quiz attempt
+    // Create featured quiz attempt — compute next attempt number
+    const { count: prevCount } = await supabase
+      .from("featured_quiz_attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("featured_quiz_id", params.featuredQuizId)
+      .eq("user_id", user.id);
+
     const { data: attempt, error: attemptErr } = await supabase
       .from("featured_quiz_attempts")
       .insert({
         featured_quiz_id: params.featuredQuizId,
         user_id: user.id,
+        attempt_number: (prevCount || 0) + 1,
         total_questions: questions.length,
         correct_count: correctCount,
         incorrect_count: incorrectCount,
@@ -343,6 +351,15 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
                   {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
                 </span>
               )}
+              {isFeatured && (
+                <button
+                  onClick={() => setIsPaused(!isPaused)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                >
+                  {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                  {isPaused ? "Resume" : "Pause"}
+                </button>
+              )}
               <span className="text-sm font-medium text-slate-600">
                 {currentIdx + 1} / {questions.length}
               </span>
@@ -453,6 +470,38 @@ export default function QuizTake({ onNavigate, params }: QuizTakeProps) {
           )}
         </div>
       </main>
+
+      {/* Pause overlay for featured quizzes */}
+      {isFeatured && isPaused && (
+        <div className="fixed inset-0 z-40 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center">
+          <Card className="p-8 mx-4 max-w-sm w-full text-center">
+            <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+              <Pause className="w-8 h-8 text-amber-600" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 mb-1">Test Paused</h2>
+            <p className="text-sm text-slate-500 mb-1">Time remaining</p>
+            <p className={`text-3xl font-bold ${timerColor} mb-6`}>
+              {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (confirm("Leave this quiz? Your progress will be lost.")) {
+                    onNavigate("featured-quiz", { quizId: params.featuredQuizId });
+                  }
+                }}
+                className="flex-1"
+              >
+                Exit
+              </Button>
+              <Button onClick={() => setIsPaused(false)} className="flex-1">
+                <span className="flex items-center justify-center gap-2"><Play className="w-4 h-4" /> Resume</span>
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

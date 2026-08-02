@@ -13,6 +13,7 @@ export default function FeaturedMocks({ onNavigate }: FeaturedMocksProps) {
   const { user } = useAuth();
   const [quizzes, setQuizzes] = useState<FeaturedQuizWithCreator[]>([]);
   const [attemptedIds, setAttemptedIds] = useState<Set<string>>(new Set());
+  const [attemptCountMap, setAttemptCountMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function FeaturedMocks({ onNavigate }: FeaturedMocksProps) {
 
         const { data: attempts } = await supabase
           .from("featured_quiz_attempts")
-          .select("featured_quiz_id")
+          .select("featured_quiz_id, id")
           .eq("user_id", user.id);
 
         const creatorIds = Array.from(new Set((fqs || []).map((q: any) => q.created_by)));
@@ -47,6 +48,15 @@ export default function FeaturedMocks({ onNavigate }: FeaturedMocksProps) {
 
         setQuizzes(mapped);
         setAttemptedIds(new Set((attempts || []).map((a) => a.featured_quiz_id)));
+        setAttemptCountMap(
+          Object.fromEntries(
+            (attempts || []).reduce<Record<string, number>>((acc, a) => {
+              acc[a.featured_quiz_id] = (acc[a.featured_quiz_id] || 0) + 1;
+              return acc;
+            }, {}),
+            Object.entries({} as Record<string, number>)
+          )
+        );
       } finally {
         setLoading(false);
       }
@@ -99,7 +109,7 @@ export default function FeaturedMocks({ onNavigate }: FeaturedMocksProps) {
                       {attempted ? (
                         <Badge color="green">
                           <span className="flex items-center gap-1">
-                            <CheckCircle className="w-3 h-3" /> Completed
+                            <CheckCircle className="w-3 h-3" /> {(attemptCountMap[q.id] || 0) > 1 ? `Done x${attemptCountMap[q.id]}` : "Completed"}
                           </span>
                         </Badge>
                       ) : (
